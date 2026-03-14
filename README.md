@@ -16,7 +16,7 @@ OpenCLI 是一个 AI Native 的 CLI 工具，通过 Chrome 浏览器 + Playwrigh
 
 ```bash
 # 安装依赖
-cd ~/code/ai-native-cli && npm install
+cd ~/code/opencli && npm install
 
 # 列出所有命令
 npx tsx src/main.ts list
@@ -43,10 +43,11 @@ npx tsx src/main.ts twitter trending --limit 10
 | 站点 | 命令 | 说明 | 模式 |
 |------|------|------|------|
 | bilibili | hot, search, me, favorite, history, feed, user-videos | 热门 / 搜索 / 个人 / 收藏 / 历史 / 动态 / 投稿 | 🔐 浏览器 |
-| zhihu | hot, search | 热榜 / 搜索 | 🔐 浏览器 |
+| zhihu | hot, search, question | 热榜 / 搜索 / 问题详情 | 🔐 浏览器 |
 | github | trending, search | Trending / 搜索 | 🔐 / 🌐 公共 |
 | twitter | trending | 热门话题 | 🔐 浏览器 |
 | v2ex | hot, latest | 热门 / 最新 | 🔐 浏览器 |
+| reddit | hot | 热门帖子 | 🔐 浏览器 |
 | hackernews | top | 热门故事 | 🌐 公共 API |
 
 ## 🎨 输出格式
@@ -56,6 +57,22 @@ opencli bilibili hot -f table   # 默认表格
 opencli bilibili hot -f json    # JSON（适合管道和 AI agent）
 opencli bilibili hot -f md      # Markdown
 opencli bilibili hot -f csv     # CSV
+```
+
+## 🧠 AI Agent 工作流
+
+```bash
+# Deep Explore: 自动发现 API 并推理 capabilities
+opencli explore <url> --site <name>
+
+# 从探索成果物合成候选 CLI
+opencli synthesize <site>
+
+# 一键：探索 → 合成 → 注册
+opencli generate <url> --goal "hot"
+
+# Strategy Cascade: 自动寻找最简可用策略
+opencli cascade <api-url>
 ```
 
 ## 🔧 创建新命令

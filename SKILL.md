@@ -13,7 +13,7 @@ tags: [cli, browser, web, mcp, playwright, bilibili, zhihu, twitter, github, v2e
 ## 安装
 
 ```bash
-cd ~/code/ai-native-cli
+cd ~/code/opencli
 npm install
 ```
 
@@ -53,6 +53,7 @@ opencli bilibili user-videos --uid 12345  # 用户投稿
 # 知乎
 opencli zhihu hot --limit 10             # 知乎热榜
 opencli zhihu search --keyword "AI"      # 搜索
+opencli zhihu question --id 34816524     # 问题详情和回答
 
 # GitHub
 opencli github trending --limit 10       # GitHub Trending
@@ -67,6 +68,10 @@ opencli v2ex latest --limit 10           # 最新话题
 
 # Hacker News
 opencli hackernews top --limit 10        # 热门故事（无需浏览器）
+
+# Reddit
+opencli reddit hot --limit 10            # 热门帖子
+opencli reddit hot --subreddit programming  # 指定子版块
 ```
 
 ### 管理命令
@@ -81,9 +86,10 @@ opencli validate bilibili   # 验证指定站点
 ### AI 工作流（为 AI Agent 设计）
 
 ```bash
-opencli explore <url>                 # 探索网站，生成 API 发现成果物
+opencli explore <url>                 # Deep Explore: 自动发现 API 并推理 capabilities
 opencli synthesize <site>             # 从探索成果物合成候选 CLI
 opencli generate <url> --goal "hot"   # 一键：探索 → 合成 → 注册
+opencli cascade <api-url>             # Strategy Cascade: 自动寻找最简可用策略
 opencli verify <site/name> --smoke    # 验证 + Smoke 测试
 ```
 
@@ -191,6 +197,7 @@ cli({
 | `type` | 输入文本 | `type: { ref: "@1", text: "hello" }` |
 | `wait` | 等待 | `wait: 2` 或 `wait: { text: "loaded" }` |
 | `press` | 按键 | `press: Enter` |
+| `intercept` | 声明式 XHR 拦截 | `intercept: { trigger: "navigate:...", capture: "api/hot", select: "data.items" }` |
 
 ## 模板语法
 
