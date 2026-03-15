@@ -104,8 +104,13 @@ export class Page implements IPage {
     await this.call('tools/call', { name: 'browser_press_key', arguments: { key } });
   }
 
-  async wait(seconds: number): Promise<void> {
-    await this.call('tools/call', { name: 'browser_wait_for', arguments: { time: seconds } });
+  async wait(options: number | { text?: string; time?: number; timeout?: number }): Promise<void> {
+    if (typeof options === 'number') {
+      await this.call('tools/call', { name: 'browser_wait_for', arguments: { time: options } });
+    } else {
+      // Pass directly to native wait_for, which supports natively awaiting text strings without heavy DOM polling
+      await this.call('tools/call', { name: 'browser_wait_for', arguments: options });
+    }
   }
 
   async tabs(): Promise<any> {
@@ -139,10 +144,32 @@ export class Page implements IPage {
   async autoScroll(options: { times?: number; delayMs?: number } = {}): Promise<void> {
     const times = options.times ?? 3;
     const delayMs = options.delayMs ?? 2000;
-    for (let i = 0; i < times; i++) {
-        await this.evaluate('() => window.scrollTo(0, document.body.scrollHeight)');
-        await this.wait(delayMs / 1000);
-    }
+    const js = `
+      async () => {
+        const maxTimes = ${times};
+        const maxWaitMs = ${delayMs};
+        for (let i = 0; i < maxTimes; i++) {
+          const lastHeight = document.body.scrollHeight;
+          window.scrollTo(0, lastHeight);
+          await new Promise(resolve => {
+            let timeoutId;
+            const observer = new MutationObserver(() => {
+              if (document.body.scrollHeight > lastHeight) {
+                clearTimeout(timeoutId);
+                observer.disconnect();
+                setTimeout(resolve, 100); // Small debounce for rendering
+              }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+            timeoutId = setTimeout(() => {
+              observer.disconnect();
+              resolve(null);
+            }, maxWaitMs);
+          });
+        }
+      }
+    `;
+    await this.evaluate(js);
   }
 
   async installInterceptor(pattern: string): Promise<void> {

@@ -5,6 +5,23 @@
 import type { IPage } from '../../types.js';
 import { render } from '../template.js';
 
+/** Simple async concurrency limiter */
+async function mapConcurrent<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 /** Single URL fetch helper */
 async function fetchSingle(
   page: IPage | null, url: string, method: string,
@@ -48,12 +65,11 @@ export async function stepFetch(page: IPage | null, params: any, data: any, args
 
   // Per-item fetch when data is array and URL references item
   if (Array.isArray(data) && urlTemplate.includes('item')) {
-    const results: any[] = [];
-    for (let i = 0; i < data.length; i++) {
-      const itemUrl = String(render(urlTemplate, { args, data, item: data[i], index: i }));
-      results.push(await fetchSingle(page, itemUrl, method, queryParams, headers, args, data));
-    }
-    return results;
+    const concurrency = typeof params?.concurrency === 'number' ? params.concurrency : 5;
+    return mapConcurrent(data, concurrency, async (item, index) => {
+      const itemUrl = String(render(urlTemplate, { args, data, item, index }));
+      return fetchSingle(page, itemUrl, method, queryParams, headers, args, data);
+    });
   }
   const url = render(urlOrObj, { args, data });
   return fetchSingle(page, String(url), method, queryParams, headers, args, data);

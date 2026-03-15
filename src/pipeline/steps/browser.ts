@@ -31,13 +31,10 @@ export async function stepWait(page: IPage, params: any, data: any, args: Record
   if (typeof params === 'number') await page.wait(params);
   else if (typeof params === 'object' && params) {
     if ('text' in params) {
-      const timeout = params.timeout ?? 10;
-      const start = Date.now();
-      while ((Date.now() - start) / 1000 < timeout) {
-        const snap = await page.snapshot({ raw: true });
-        if (typeof snap === 'string' && snap.includes(params.text)) break;
-        await page.wait(0.5);
-      }
+      await page.wait({
+        text: String(render(params.text, { args, data })),
+        timeout: params.timeout
+      });
     } else if ('time' in params) await page.wait(Number(params.time));
   } else if (typeof params === 'string') await page.wait(Number(render(params, { args, data })));
   return data;

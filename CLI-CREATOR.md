@@ -57,8 +57,9 @@ opencli bilibili hot -v   # 查看已有命令的 pipeline 每步数据流
 
 1. **后缀爆破法 (`.json`)**: 像 Reddit 这样复杂的网站，只要在其 URL 后加上 `.json`（例如 `/r/all.json`），就能在带 Cookie 的情况下直接利用 `fetch` 拿到极其干净的 REST 数据（Tier 2 Cookie 策略极速秒杀）。另外如功能完备的**雪球 (xueqiu)** 也可以走这种纯 API 的方式极简获取，成为你构建简单 YAML 的黄金标杆。
 2. **全局状态查找法 (`__INITIAL_STATE__`)**: 许多服务端渲染 (SSR) 的网站（如小红书、Bilibili）会将首页或详情页的完整数据挂载到全局 window 对象上。与其去拦截网络请求，不如直接 `page.evaluate('() => window.__INITIAL_STATE__')` 获取整个数据树。
-3. **框架探测与 Store Action 截断**: 如果站点使用 Vue + Pinia，可以使用 `tap` 步骤调用 action，让前端框架代替你完成复杂的鉴权签名封装。
-4. **底层 XHR/Fetch 拦截**: 最后手段，当上述都不行时，使用 TypeScript 适配器进行无侵入式的请求抓取。
+3. **主动交互触发法 (Active Interaction)**: 很多深层 API（如视频字幕、评论下的回复）是懒加载的。在静态抓包找不到数据时，尝试在 `evaluate` 步骤或手动打断点时，主动去**点击（Click）页面上的对应按钮**（如"CC"、"展开全部"），从而诱发隐藏的 Network Fetch。
+4. **框架探测与 Store Action 截断**: 如果站点使用 Vue + Pinia，可以使用 `tap` 步骤调用 action，让前端框架代替你完成复杂的鉴权签名封装。
+5. **底层 XHR/Fetch 拦截**: 最后手段，当上述都不行时，使用 TypeScript 适配器进行无侵入式的请求抓取。
 
 ### 1d. 框架检测
 
@@ -411,6 +412,35 @@ cli({
 
 > **拦截核心思路**：不自己构造签名，而是利用 `installInterceptor` 劫持网站自己的 `XMLHttpRequest` 和 `fetch`，让网站发请求，我们直接在底层取出解析好的 `response.json()`。
 
+#### 进阶场景 1: 级联请求 (Cascading Requests) 与鉴权绕过
+
+部分 API 获取是非常复杂的连环请求（例如 B 站获取视频字幕：先需要 `bvid` 获取核心 `cid`，再通过 `cid` 获取包含签名/Wbi 的字幕列表拉取地址，最后 fetch 真实的 CDN 资源）。在此类场景中，你必须在一个 `evaluate` 块内部或者在 TypeScript Node 端编排整个请求链条：
+
+```typescript
+// 真实场景：B站获取视频字幕的级联获取思路
+const subtitleUrls = await page.evaluate(async (bvid) => {
+  // Step 1: 拿 CID (通常可以通过页面全局状态极速提取)
+  const cid = window.__INITIAL_STATE__?.videoData?.cid;
+  
+  // Step 2: 依据 BVID 和 CID 拿字幕配置 (可能需要携带 W_RID 签名或依赖浏览器当前登录状态 Cookie)
+  const res = await fetch(\`/x/player/wbi/v2?bvid=\${bvid}&cid=\${cid}\`, { credentials: 'include' });
+  const data = await res.json();
+  
+  // Step 3: 风控拦截/未登录降级空值检测 (Anti-Bot Empty Value Detection) ⚠️ 极其重要
+  // 很多大厂 API 只要签名失败或无强登录 Cookie 依然会返回 HTTP 200，但把关键 URL 设为 ""
+  const firstSubUrl = data.data?.subtitle?.subtitles?.[0]?.subtitle_url;
+  if (!firstSubUrl) {
+    throw new Error('被风控降级或需登录：拿不到真实的 subtitle_url，请检查 Cookie 状态 (Tier 2/3)');
+  }
+  
+  return firstSubUrl;
+}, kwargs.bvid);
+
+// Step 4: 拉取最终的 CDN 静态文件 (无鉴权)
+const finalRes = await fetch(subtitleUrls.startsWith('//') ? 'https:' + subtitleUrls : subtitleUrls);
+const subtitles = await finalRes.json();
+```
+
 ---
 
 ## Step 4: 测试
@@ -553,6 +583,8 @@ git push
 | TS evaluate 格式 | `() => {}` 报 `result is not a function` | TS 中 `page.evaluate()` 必须用 IIFE：`(async () => { ... })()` |
 | 页面异步加载 | evaluate 拿到空数据（store state 还没更新） | 在 evaluate 内用 polling 等待数据出现，或增加 `wait` 时间 |
 | YAML 内嵌大段 JS | 调试困难，字符串转义问题 | 超过 10 行 JS 的命令改用 TS adapter |
+| **风控被拦截(伪200)** | 获取到的 JSON 里核心数据是 `""` (空串) | 极易被误判。必须添加断言！无核心数据立刻要求升级鉴权 Tier 并重新配置 Cookie |
+| **API 没找见** | `explore` 工具打分出来的都拿不到深层数据 | 点击页面按钮诱发懒加载数据，再结合 `getInterceptedRequests` 获取 |
 
 ---
 

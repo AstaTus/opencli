@@ -12,7 +12,7 @@ export interface IPage {
   click(ref: string): Promise<void>;
   typeText(ref: string, text: string): Promise<void>;
   pressKey(key: string): Promise<void>;
-  wait(seconds: number): Promise<void>;
+  wait(options: number | { text?: string; time?: number; timeout?: number }): Promise<void>;
   tabs(): Promise<any>;
   closeTab(index?: number): Promise<void>;
   newTab(): Promise<void>;

@@ -42,6 +42,8 @@ export async function stepTap(page: IPage, params: any, data: any, args: Record<
     async () => {
       // ── 1. Setup capture proxy (fetch + XHR dual interception) ──
       let captured = null;
+      let captureResolve;
+      const capturePromise = new Promise(r => { captureResolve = r; });
       const capturePattern = ${JSON.stringify(capturePattern)};
 
       // Intercept fetch API
@@ -52,7 +54,7 @@ export async function stepTap(page: IPage, params: any, data: any, args: Record<
           const url = typeof fetchArgs[0] === 'string' ? fetchArgs[0]
             : fetchArgs[0] instanceof Request ? fetchArgs[0].url : String(fetchArgs[0]);
           if (capturePattern && url.includes(capturePattern) && !captured) {
-            try { captured = await resp.clone().json(); } catch {}
+            try { captured = await resp.clone().json(); captureResolve(); } catch {}
           }
         } catch {}
         return resp;
@@ -71,13 +73,13 @@ export async function stepTap(page: IPage, params: any, data: any, args: Record<
           const origHandler = xhr.onreadystatechange;
           xhr.onreadystatechange = function() {
             if (xhr.readyState === 4 && !captured) {
-              try { captured = JSON.parse(xhr.responseText); } catch {}
+              try { captured = JSON.parse(xhr.responseText); captureResolve(); } catch {}
             }
             if (origHandler) origHandler.apply(this, arguments);
           };
           const origOnload = xhr.onload;
           xhr.onload = function() {
-            if (!captured) { try { captured = JSON.parse(xhr.responseText); } catch {} }
+            if (!captured) { try { captured = JSON.parse(xhr.responseText); captureResolve(); } catch {} }
             if (origOnload) origOnload.apply(this, arguments);
           };
         }
@@ -117,9 +119,9 @@ export async function stepTap(page: IPage, params: any, data: any, args: Record<
         await ${actionCall};
 
         // ── 4. Wait for network response ──
-        const deadline = Date.now() + ${timeout} * 1000;
-        while (!captured && Date.now() < deadline) {
-          await new Promise(r => setTimeout(r, 200));
+        if (!captured) {
+          const timeoutPromise = new Promise(r => setTimeout(r, ${timeout} * 1000));
+          await Promise.race([capturePromise, timeoutPromise]);
         }
       } finally {
         // ── 5. Always restore originals ──

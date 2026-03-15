@@ -277,6 +277,30 @@ export interface DiscoveredStore {
   stateKeys: string[];
 }
 
+// ── Auto-Interaction (Fuzzing) ─────────────────────────────────────────────
+
+const INTERACT_FUZZ_JS = `
+  async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const clickables = Array.from(document.querySelectorAll(
+      'button, [role="button"], [role="tab"], .tab, .btn, a[href="javascript:void(0)"], a[href="#"]'
+    )).slice(0, 15); // limit to 15 to avoid endless loops
+
+    let clicked = 0;
+    for (const el of clickables) {
+      try {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          clicked++;
+          await sleep(300); // give it time to trigger network
+        }
+      } catch {}
+    }
+    return clicked;
+  }
+`;
+
 // ── Main explore function ──────────────────────────────────────────────────
 
 export async function exploreUrl(
@@ -299,6 +323,18 @@ export async function exploreUrl(
 
       // Step 2: Auto-scroll to trigger lazy loading (use keyboard since page.scroll may not exist)
       for (let i = 0; i < 3; i++) { try { await page.pressKey('End'); } catch {} await page.wait(1); }
+
+      // Step 2.5: Interactive Fuzzing (if requested)
+      if (opts.auto) {
+         try {
+           console.log("🤖 [Explore] Auto-fuzzing interactions enabled. Simulating clicks...");
+           const clicks = await page.evaluate(INTERACT_FUZZ_JS);
+           console.log(`🤖 [Explore] Performed ${clicks} simulated clicks.`);
+           await page.wait(2); // wait for XHRs to settle
+         } catch (e) {
+           console.error("🤖 [Explore] Fuzzing failed:", e);
+         }
+      }
 
       // Step 3: Read page metadata
       const metadata = await readPageMetadata(page);
@@ -382,6 +418,11 @@ export async function exploreUrl(
         if (ep.hasSearchParam) args.push({ name: 'keyword', type: 'str', required: true });
         args.push({ name: 'limit', type: 'int', required: false, default: 20 });
         if (ep.hasPaginationParam) args.push({ name: 'page', type: 'int', required: false, default: 1 });
+
+        // Improve scoring for JSON endpoints that return empty arrays/objects (Anti-Bot Empty Value Detection)
+        if (ep.score >= 5 && ep.responseAnalysis?.itemCount === 0 && ep.contentType.includes('json')) {
+            ep.score -= 2; // Penalize empty drops 
+        }
 
         // Link store actions to capabilities when store-action strategy is recommended
         const epStrategy = inferStrategy(ep.authIndicators);
