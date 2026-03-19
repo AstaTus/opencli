@@ -5,21 +5,10 @@
   "description": "Bridge between opencli CLI and your browser — execute commands, read cookies, manage tabs.",
   "permissions": [
     "debugger",
-    "scripting",
     "tabs",
     "cookies",
     "activeTab",
     "alarms"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content/noop.js"],
-      "run_at": "document_idle"
-    }
   ],
   "background": {
     "service_worker": "dist/background.js",

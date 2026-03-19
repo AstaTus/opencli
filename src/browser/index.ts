@@ -14,13 +14,10 @@ export function getTokenFingerprint(_token: string | undefined): string | null {
   return null;
 }
 
-// Test-only helpers
-import { createJsonRpcRequest } from './mcp.js';
 import { extractTabEntries, diffTabIndexes, appendLimited } from './tabs.js';
 import { withTimeoutMs } from '../runtime.js';
 
 export const __test__ = {
-  createJsonRpcRequest,
   extractTabEntries,
   diffTabIndexes,
   appendLimited,

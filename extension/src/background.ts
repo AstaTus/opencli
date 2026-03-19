@@ -2,11 +2,7 @@
  * opencli Browser Bridge — Service Worker (background script).
  *
  * Connects to the opencli daemon via WebSocket, receives commands,
- * dispatches them to Chrome APIs (scripting/tabs/cookies), returns results.
- *
- * IMPORTANT: In IIFE mode (non-module), all chrome.* API registrations
- * must happen inside lifecycle events (onInstalled/onStartup), NOT at
- * the top level, or the service worker registration will fail.
+ * dispatches them to Chrome APIs (debugger/tabs/cookies), returns results.
  */
 
 import type { Command, Result } from './protocol';
@@ -66,7 +62,6 @@ function scheduleReconnect(): void {
 }
 
 // ─── Lifecycle events ────────────────────────────────────────────────
-// All chrome.* API registrations must be in these listeners, not top-level.
 
 function initialize(): void {
   chrome.alarms.create('keepalive', { periodInMinutes: 0.4 }); // ~24 seconds
@@ -114,20 +109,25 @@ async function handleCommand(cmd: Command): Promise<Result> {
 
 // ─── Action handlers ─────────────────────────────────────────────────
 
+/** Check if a URL is a debuggable web page (not chrome:// or extension page) */
+function isWebUrl(url?: string): boolean {
+  if (!url) return false;
+  return !url.startsWith('chrome://') && !url.startsWith('chrome-extension://');
+}
+
 /** Resolve target tab: use specified tabId or fall back to active web page tab */
 async function resolveTabId(tabId?: number): Promise<number> {
   if (tabId !== undefined) return tabId;
 
   // Try the active tab first
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (activeTab?.id && activeTab.url && !activeTab.url.startsWith('chrome://') && !activeTab.url.startsWith('chrome-extension://')) {
+  if (activeTab?.id && isWebUrl(activeTab.url)) {
     return activeTab.id;
   }
 
-  // Active tab is not debuggable (chrome:// or chrome-extension://),
-  // try to find any open web page tab
+  // Active tab is not debuggable — try to find any open web page tab
   const allTabs = await chrome.tabs.query({ currentWindow: true });
-  const webTab = allTabs.find(t => t.id && t.url && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-extension://'));
+  const webTab = allTabs.find(t => t.id && isWebUrl(t.url));
   if (webTab?.id) {
     await chrome.tabs.update(webTab.id, { active: true });
     return webTab.id;
@@ -155,20 +155,25 @@ async function handleNavigate(cmd: Command): Promise<Result> {
   const tabId = await resolveTabId(cmd.tabId);
   await chrome.tabs.update(tabId, { url: cmd.url });
 
-  // Wait for page to finish loading
+  // Wait for page to finish loading, checking current status first to avoid race
   await new Promise<void>((resolve) => {
-    const listener = (id: number, info: chrome.tabs.TabChangeInfo) => {
-      if (id === tabId && info.status === 'complete') {
+    // Check if already complete (e.g. cached pages)
+    chrome.tabs.get(tabId).then(tab => {
+      if (tab.status === 'complete') { resolve(); return; }
+
+      const listener = (id: number, info: chrome.tabs.TabChangeInfo) => {
+        if (id === tabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
+      // Timeout fallback
+      setTimeout(() => {
         chrome.tabs.onUpdated.removeListener(listener);
         resolve();
-      }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
-    // Timeout fallback
-    setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve();
-    }, 30000);
+      }, 15000);
+    });
   });
 
   const tab = await chrome.tabs.get(tabId);
@@ -180,7 +185,7 @@ async function handleTabs(cmd: Command): Promise<Result> {
     case 'list': {
       const tabs = await chrome.tabs.query({});
       const data = tabs
-        .filter((t) => t.url && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-extension://'))
+        .filter((t) => isWebUrl(t.url))
         .map((t, i) => ({
           index: i,
           tabId: t.id,
@@ -196,7 +201,6 @@ async function handleTabs(cmd: Command): Promise<Result> {
     }
     case 'close': {
       if (cmd.index !== undefined) {
-        // Close by index
         const tabs = await chrome.tabs.query({});
         const target = tabs[cmd.index];
         if (!target?.id) return { id: cmd.id, ok: false, error: `Tab index ${cmd.index} not found` };
@@ -204,7 +208,6 @@ async function handleTabs(cmd: Command): Promise<Result> {
         cdp.detach(target.id);
         return { id: cmd.id, ok: true, data: { closed: target.id } };
       }
-      // Close by tabId or active tab
       const tabId = await resolveTabId(cmd.tabId);
       await chrome.tabs.remove(tabId);
       cdp.detach(tabId);

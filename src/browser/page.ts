@@ -11,8 +11,6 @@
  */
 
 import { formatSnapshot } from '../snapshotFormatter.js';
-import { normalizeEvaluateSource } from '../pipeline/template.js';
-import { generateInterceptorJs, generateReadInterceptedJs } from '../interceptor.js';
 import type { IPage } from '../types.js';
 import { sendCommand } from './daemon-client.js';
 
@@ -23,10 +21,15 @@ export class Page implements IPage {
   /** Active tab ID, set after navigate and used in all subsequent commands */
   private _tabId: number | undefined;
 
+  /** Helper: spread tabId into command params if we have one */
+  private _tabOpt(): { tabId: number } | Record<string, never> {
+    return this._tabId !== undefined ? { tabId: this._tabId } : {};
+  }
+
   async goto(url: string): Promise<void> {
     const result = await sendCommand('navigate', {
       url,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
+      ...this._tabOpt(),
     }) as { tabId?: number };
     // Remember the tabId for subsequent exec calls
     if (result?.tabId) {
@@ -35,27 +38,16 @@ export class Page implements IPage {
   }
 
   async evaluate(js: string): Promise<any> {
-    const normalized = normalizeEvaluateSource(js);
-    // Wrap function-style code: `() => { ... }` or `async () => { ... }` → IIFE
-    const trimmed = normalized.trim();
-    const code = trimmed.startsWith('async')
-      ? `(${trimmed})()`
-      : trimmed.startsWith('function') || trimmed.startsWith('(')
-        ? `(${trimmed})()`
-        : trimmed;
-    return sendCommand('exec', {
-      code,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
-    });
+    const code = wrapForEval(js);
+    return sendCommand('exec', { code, ...this._tabOpt() });
   }
 
   async snapshot(opts: { interactive?: boolean; compact?: boolean; maxDepth?: number; raw?: boolean } = {}): Promise<any> {
-    // Use CDP Accessibility.getFullAXTree via exec
+    const maxDepth = Math.max(1, Math.min(Number(opts.maxDepth) || 50, 200));
     const code = `
       (async () => {
-        // Build a simplified accessibility tree from the DOM
-        function buildTree(node, depth = 0) {
-          if (depth > ${opts.maxDepth ?? 50}) return '';
+        function buildTree(node, depth) {
+          if (depth > ${maxDepth}) return '';
           const role = node.getAttribute?.('role') || node.tagName?.toLowerCase() || 'generic';
           const name = node.getAttribute?.('aria-label') || node.getAttribute?.('alt') || node.textContent?.trim().slice(0, 80) || '';
           const isInteractive = ['a', 'button', 'input', 'select', 'textarea'].includes(node.tagName?.toLowerCase()) || node.getAttribute?.('tabindex') != null;
@@ -64,7 +56,7 @@ export class Page implements IPage {
 
           let indent = '  '.repeat(depth);
           let line = indent + role;
-          if (name) line += ' "' + name.replace(/"/g, '\\"') + '"';
+          if (name) line += ' "' + name.replace(/"/g, '\\\\"') + '"';
           if (node.tagName?.toLowerCase() === 'a' && node.href) line += ' [' + node.href + ']';
           if (node.tagName?.toLowerCase() === 'input') line += ' [' + (node.type || 'text') + ']';
 
@@ -76,13 +68,10 @@ export class Page implements IPage {
           }
           return result;
         }
-        return buildTree(document.body);
+        return buildTree(document.body, 0);
       })()
     `;
-    const raw = await sendCommand('exec', {
-      code,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
-    });
+    const raw = await sendCommand('exec', { code, ...this._tabOpt() });
     if (opts.raw) return raw;
     if (typeof raw === 'string') return formatSnapshot(raw, opts);
     return raw;
@@ -101,10 +90,7 @@ export class Page implements IPage {
         return 'clicked';
       })()
     `;
-    await sendCommand('exec', {
-      code,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
-    });
+    await sendCommand('exec', { code, ...this._tabOpt() });
   }
 
   async typeText(ref: string, text: string): Promise<void> {
@@ -123,10 +109,7 @@ export class Page implements IPage {
         return 'typed';
       })()
     `;
-    await sendCommand('exec', {
-      code,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
-    });
+    await sendCommand('exec', { code, ...this._tabOpt() });
   }
 
   async pressKey(key: string): Promise<void> {
@@ -138,10 +121,7 @@ export class Page implements IPage {
         return 'pressed';
       })()
     `;
-    await sendCommand('exec', {
-      code,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
-    });
+    await sendCommand('exec', { code, ...this._tabOpt() });
   }
 
   async wait(options: number | { text?: string; time?: number; timeout?: number }): Promise<void> {
@@ -166,10 +146,7 @@ export class Page implements IPage {
           check();
         })
       `;
-      await sendCommand('exec', {
-        code,
-        ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
-      });
+      await sendCommand('exec', { code, ...this._tabOpt() });
     }
   }
 
@@ -190,7 +167,6 @@ export class Page implements IPage {
   }
 
   async networkRequests(includeStatic: boolean = false): Promise<any> {
-    // Use performance API to get network entries
     const code = `
       (() => {
         const entries = performance.getEntriesByType('resource');
@@ -204,15 +180,15 @@ export class Page implements IPage {
           }));
       })()
     `;
-    return sendCommand('exec', {
-      code,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
-    });
+    return sendCommand('exec', { code, ...this._tabOpt() });
   }
 
   async consoleMessages(level: string = 'info'): Promise<any> {
-    // Console messages can't be retrospectively read via exec.
-    // Return empty for now — users should use networkRequests or evaluate.
+    // Console messages can't be retrospectively read via CDP Runtime.evaluate.
+    // Would need Runtime.consoleAPICalled event listener, which is not yet implemented.
+    if (process.env.OPENCLI_VERBOSE) {
+      console.error('[page] consoleMessages() not supported in lightweight mode — returning empty');
+    }
     return [];
   }
 
@@ -221,7 +197,7 @@ export class Page implements IPage {
     const dy = direction === 'up' ? -amount : direction === 'down' ? amount : 0;
     await sendCommand('exec', {
       code: `window.scrollBy(${dx}, ${dy})`,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
+      ...this._tabOpt(),
     });
   }
 
@@ -248,27 +224,51 @@ export class Page implements IPage {
         }
       })()
     `;
-    await sendCommand('exec', {
-      code,
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
-    });
+    await sendCommand('exec', { code, ...this._tabOpt() });
   }
 
   async installInterceptor(pattern: string): Promise<void> {
+    const { generateInterceptorJs } = await import('../interceptor.js');
     await sendCommand('exec', {
       code: generateInterceptorJs(JSON.stringify(pattern), {
         arrayName: '__opencli_xhr',
         patchGuard: '__opencli_interceptor_patched',
       }),
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
+      ...this._tabOpt(),
     });
   }
 
   async getInterceptedRequests(): Promise<any[]> {
+    const { generateReadInterceptedJs } = await import('../interceptor.js');
     const result = await sendCommand('exec', {
       code: generateReadInterceptedJs('__opencli_xhr'),
-      ...(this._tabId !== undefined ? { tabId: this._tabId } : {}),
+      ...this._tabOpt(),
     });
     return (result as any[]) || [];
   }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Wrap JS code for CDP Runtime.evaluate:
+ * - Already an IIFE `(...)()` → send as-is
+ * - Arrow/function literal → wrap as IIFE `(code)()`
+ * - `new Promise(...)` or raw expression → send as-is (expression)
+ */
+function wrapForEval(js: string): string {
+  const code = js.trim();
+  if (!code) return 'undefined';
+
+  // Already an IIFE: `(async () => { ... })()` or `(function() {...})()`
+  if (/^\([\s\S]*\)\s*\(.*\)\s*$/.test(code)) return code;
+
+  // Arrow function: `() => ...` or `async () => ...`
+  if (/^(async\s+)?(\([^)]*\)|[A-Za-z_]\w*)\s*=>/.test(code)) return `(${code})()`;
+
+  // Function declaration: `function ...` or `async function ...`
+  if (/^(async\s+)?function[\s(]/.test(code)) return `(${code})()`;
+
+  // Everything else: bare expression, `new Promise(...)`, etc. → evaluate directly
+  return code;
 }

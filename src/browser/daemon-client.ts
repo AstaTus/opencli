@@ -65,6 +65,7 @@ export async function isExtensionConnected(): Promise<boolean> {
 
 /**
  * Send a command to the daemon and wait for a result.
+ * Retries up to 3 times with 500ms delay for transient failures.
  */
 export async function sendCommand(
   action: DaemonCommand['action'],
@@ -72,18 +73,36 @@ export async function sendCommand(
 ): Promise<unknown> {
   const id = generateId();
   const command: DaemonCommand = { id, action, ...params };
+  const maxRetries = 3;
 
-  const res = await fetch(`${DAEMON_URL}/command`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(command),
-  });
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
 
-  const result = (await res.json()) as DaemonResult;
+      const res = await fetch(`${DAEMON_URL}/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(command),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
 
-  if (!result.ok) {
-    throw new Error(result.error ?? 'Daemon command failed');
+      const result = (await res.json()) as DaemonResult;
+
+      if (!result.ok) {
+        throw new Error(result.error ?? 'Daemon command failed');
+      }
+
+      return result.data;
+    } catch (err) {
+      const isRetryable = err instanceof TypeError  // fetch network error
+        || (err instanceof Error && err.name === 'AbortError');
+      if (isRetryable && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 500));
+        continue;
+      }
+      throw err;
+    }
   }
-
-  return result.data;
 }

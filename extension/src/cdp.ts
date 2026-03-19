@@ -15,7 +15,17 @@ async function ensureAttached(tabId: number): Promise<void> {
     await chrome.debugger.attach({ tabId }, '1.3');
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (!msg.includes('Another debugger is already attached')) {
+    // "Already attached" from OUR previous session (service worker restart) — OK, track it
+    if (msg.includes('Another debugger is already attached')) {
+      // Don't add to attached set — we can't sendCommand on someone else's session
+      // Try to detach and re-attach to claim ownership
+      try { await chrome.debugger.detach({ tabId }); } catch { /* ignore */ }
+      try {
+        await chrome.debugger.attach({ tabId }, '1.3');
+      } catch {
+        throw new Error(`attach failed: ${msg}`);
+      }
+    } else {
       throw new Error(`attach failed: ${msg}`);
     }
   }

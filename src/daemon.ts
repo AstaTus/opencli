@@ -74,6 +74,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     resetIdleTimer();
     try {
       const body = JSON.parse(await readBody(req));
+      if (!body.id) {
+        jsonResponse(res, 400, { ok: false, error: 'Missing command id' });
+        return;
+      }
 
       if (!extensionWs || extensionWs.readyState !== WebSocket.OPEN) {
         jsonResponse(res, 503, { id: body.id, ok: false, error: 'Extension not connected. Please install the opencli Browser Bridge extension.' });

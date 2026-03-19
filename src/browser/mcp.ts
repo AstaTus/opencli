@@ -17,12 +17,7 @@ const DAEMON_SPAWN_TIMEOUT = 10000; // 10s to wait for daemon + extension
 
 export type PlaywrightMCPState = 'idle' | 'connecting' | 'connected' | 'closing' | 'closed';
 
-// Re-export for __test__ compatibility
-let _jsonRpcId = 0;
-export function createJsonRpcRequest(method: string, params: Record<string, unknown> = {}): { id: number; message: string } {
-  const id = ++_jsonRpcId;
-  return { id, message: JSON.stringify({ id, method, params }) };
-}
+
 
 /**
  * Browser factory: manages daemon lifecycle and provides IPage instances.

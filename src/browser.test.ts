@@ -2,15 +2,6 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { PlaywrightMCP, __test__ } from './browser/index.js';
 
 describe('browser helpers', () => {
-  it('creates JSON-RPC requests with unique ids', () => {
-    const first = __test__.createJsonRpcRequest('tools/call', { name: 'browser_tabs' });
-    const second = __test__.createJsonRpcRequest('tools/call', { name: 'browser_snapshot' });
-
-    expect(second.id).toBe(first.id + 1);
-    expect(first.message).toContain(`"id":${first.id}`);
-    expect(second.message).toContain(`"id":${second.id}`);
-  });
-
   it('extracts tab entries from string snapshots', () => {
     const entries = __test__.extractTabEntries('Tab 0 https://example.com\nTab 1 Chrome Extension');
 
