@@ -54,10 +54,18 @@ OpenCLI connects to your browser through a lightweight **Browser Bridge** Chrome
 
 ### Browser Bridge Extension Setup
 
-1. Install the **opencli Browser Bridge** extension in Chrome:
-   - Open `chrome://extensions`, enable **Developer mode** (top-right toggle)
-   - Click **Load unpacked**, select the `extension/` folder from this repo
-2. That's it! The daemon auto-starts when you run any browser command. No tokens, no manual configuration.
+You can install the extension via either method:
+
+**Method 1: Download Pre-built Release (Recommended)**
+1. Go to the GitHub [Releases page](https://github.com/jackwener/opencli/releases) and download the latest `opencli-extension.zip` or `opencli-extension.crx`.
+2. Open `chrome://extensions` and enable **Developer mode** (top-right toggle).
+3. Drag and drop the `.crx` file or the unzipped folder into the extensions page.
+
+**Method 2: Load Unpacked Source (For Developers)**
+1. Open `chrome://extensions` and enable **Developer mode**.
+2. Click **Load unpacked** and select the `extension/` directory from this repository.
+
+That's it! The daemon auto-starts when you run any browser command. No tokens, no manual configuration.
 
 > **Tip**: Use `opencli doctor` for ongoing diagnosis:
 > ```bash
