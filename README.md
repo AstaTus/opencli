@@ -39,6 +39,7 @@ Turn ANY Electron application into a CLI tool! Recombine, script, and extend app
 - **CLI All Electron** — CLI-ify apps like Antigravity Ultra! Now AI can control itself natively using cc/openclaw!
 - **Account-safe** — Reuses Chrome's logged-in state; your credentials never leave the browser.
 - **AI Agent ready** — `explore` discovers APIs, `synthesize` generates adapters, `cascade` finds auth strategies.
+- **External CLI Hub** — Discover, auto-install, and passthrough commands to any external CLI (gh, obsidian, docker, kubectl, etc). Zero setup.
 - **Self-healing setup** — `opencli setup` verifies Browser Bridge connectivity; `opencli doctor` diagnoses daemon, extension, and live browser connectivity.
 - **Dynamic Loader** — Simply drop `.ts` or `.yaml` adapters into the `clis/` folder for auto-registration.
 - **Dual-Engine Architecture** — Supports both YAML declarative data pipelines and robust browser runtime TypeScript injections.
@@ -146,6 +147,28 @@ Run `opencli list` for the live registry.
 | **weibo** | `hot` | Browser |
 | **yahoo-finance** | `quote` | Browser |
 | **sinafinance** | `news` | 🌐 Public |
+
+### External CLI Hub
+
+OpenCLI acts as a universal hub for your existing command-line tools. It provides unified discovery, automatic installation, and pure passthrough execution.
+
+| External CLI | Description | Commands Example |
+|--------------|-------------|------------------|
+| **gh** | GitHub CLI | `opencli gh pr list --limit 5` |
+| **obsidian** | Obsidian vault management | `opencli obsidian search query="AI"` |
+| **docker** | Docker command-line interface | `opencli docker ps` |
+| **kubectl** | Kubernetes command-line tool | `opencli kubectl get pods` |
+| **readwise** | Readwise & Reader CLI | `opencli readwise login` |
+
+**Zero Configuration**: OpenCLI purely passes your inputs to the underlying binary via standard I/O streams. The external CLI works exactly as it naturally would, maintaining its standard output formats.
+
+**Auto-Installation**: If you run `opencli gh ...` and `gh` is not installed on your system, OpenCLI will automatically try to install it using your system's package manager (e.g., `brew install gh`) before seamlessly re-running the command.
+
+**Register Your Own**:
+Add any local CLI to your OpenCLI registry so AI agents can automatically discover it via the `opencli list` command.
+```bash
+opencli register mycli
+```
 
 ### Desktop App Adapters
 

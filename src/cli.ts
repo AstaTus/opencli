@@ -9,6 +9,7 @@ import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { CliError } from './errors.js';
 import { shouldUseBrowserSession } from './capabilityRouting.js';
+import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled } from './external.js';
 
 export function runCli(BUILTIN_CLIS: string, USER_CLIS: string): void {
   const program = new Command();
@@ -47,7 +48,19 @@ export function runCli(BUILTIN_CLIS: string, USER_CLIS: string): void {
         for (const cmd of cmds) { const tag = strategyLabel(cmd) === 'public' ? chalk.green('[public]') : chalk.yellow(`[${strategyLabel(cmd)}]`); console.log(`    ${cmd.name} ${tag}${cmd.description ? chalk.dim(` — ${cmd.description}`) : ''}`); }
         console.log();
       }
-      console.log(chalk.dim(`  ${commands.length} commands across ${sites.size} sites`)); console.log();
+      
+      const externalClis = loadExternalClis();
+      if (externalClis.length > 0) {
+        console.log(chalk.bold.cyan(`  external CLIs`));
+        for (const ext of externalClis) {
+          const isInstalled = isBinaryInstalled(ext.binary);
+          const tag = isInstalled ? chalk.green('[installed]') : chalk.yellow('[auto-install]');
+          console.log(`    ${ext.name} ${tag}${ext.description ? chalk.dim(` — ${ext.description}`) : ''}`);
+        }
+        console.log();
+      }
+      
+      console.log(chalk.dim(`  ${commands.length} built-in commands across ${sites.size} sites, ${externalClis.length} external CLIs`)); console.log();
     });
 
   program.command('validate').description('Validate CLI definitions').argument('[target]', 'site or site/name')
@@ -108,6 +121,48 @@ export function runCli(BUILTIN_CLIS: string, USER_CLIS: string): void {
     .action((shell) => {
       printCompletionScript(shell);
     });
+
+  const externalClis = loadExternalClis();
+
+  program.command('install')
+    .description('Install an external CLI')
+    .argument('<name>', 'Name of the external CLI')
+    .action((name: string) => {
+      const ext = externalClis.find(e => e.name === name);
+      if (!ext) {
+         console.error(chalk.red(`External CLI '${name}' not found in registry.`));
+         process.exitCode = 1;
+         return;
+      }
+      installExternalCli(ext);
+    });
+
+  program.command('register')
+    .description('Register an external CLI')
+    .argument('<name>', 'Name of the CLI')
+    .option('--binary <bin>', 'Binary name if different from name')
+    .option('--install <cmd>', 'Auto-install command')
+    .option('--desc <text>', 'Description')
+    .action((name, opts) => {
+      registerExternalCli(name, opts.binary, opts.install, opts.desc);
+    });
+
+  for (const ext of externalClis) {
+    if (program.commands.some(c => c.name() === ext.name)) continue;
+    program.command(ext.name)
+      .description(`(External) ${ext.description || ext.name}`)
+      .allowUnknownOption()
+      .action(() => {
+        // Retrieve args passed to the external CLI
+        // Commander consumes standard args before the action, so we must slice process.argv directly.
+        const extIndex = process.argv.indexOf(ext.name);
+        const args = process.argv.slice(extIndex + 1);
+        executeExternalCli(ext.name, args).catch(err => {
+          console.error(chalk.red(`Error: ${err.message}`));
+          process.exitCode = 1;
+        });
+      });
+  }
 
   // ── Antigravity serve (built-in, long-running) ──────────────────────────────
 

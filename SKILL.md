@@ -168,9 +168,11 @@ opencli antigravity watch               # 流式监听增量消息
 ### Management Commands
 
 ```bash
-opencli list                # List all commands
+opencli list                # List all commands (including External CLIs)
 opencli list --json         # JSON output
 opencli list -f yaml        # YAML output
+opencli install <name>      # Auto-install an external CLI (e.g., gh, obsidian)
+opencli register <name>     # Register a local custom CLI for unified discovery
 opencli validate            # Validate all CLI definitions
 opencli validate bilibili   # Validate specific site
 opencli setup               # Interactive Browser Bridge setup and connectivity check
