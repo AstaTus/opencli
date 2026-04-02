@@ -90,6 +90,7 @@ export async function isExtensionConnected(): Promise<boolean> {
 export async function sendCommand(
   action: DaemonCommand['action'],
   params: Omit<DaemonCommand, 'id' | 'action'> = {},
+  timeoutMs: number = 30000,
 ): Promise<unknown> {
   const maxRetries = 4;
 
@@ -99,7 +100,7 @@ export async function sendCommand(
     const command: DaemonCommand = { id, action, ...params };
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30000);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
 
       const res = await fetch(`${DAEMON_URL}/command`, {
         method: 'POST',
